@@ -1,0 +1,81 @@
+---
+title: "HW3_Paces_Will"
+author: "Will Paces"
+date: "February 26, 2022"
+output: html_document
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## STAA 566 Will Paces Homework 3
+
+I wanted to visualize the change in state populations between 2010 and 2019, and provide plots comparing average income and cost-of-living over this time period in an attempt to provide an economic explanation for the migration of people. This data was downloaded from the US census bureau from both the Decennial and American Community Survey data repositiories.
+
+```{r, warning=FALSE,message=FALSE}
+# Load libraries
+library(ggplot2)
+library(rgeos)
+library(rworldmap)
+library(sf)
+library(tidyr)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(tidycensus)
+library(stringr)
+library(plotly)
+library(leaflet)
+library(leafpop)
+library(rlang)
+```
+
+```{r}
+# Get 2010 population data, save state name, fips and population columns
+statepop.2010 <- get_decennial(geography = 'state', variables = 'P001001', year = 2010)
+statepop.2010 <- statepop.2010 %>% select(NAME, fips = GEOID, pop2010 = value)
+statepop.2010$fips <- as.integer(statepop.2010$fips)
+
+# Get 2019 (2020 is unavailable?) population data, save fips and pop
+statepop.2019 <- get_acs(geography = 'state', variables = 'B01001_001', year = 2019)
+statepop.2019 <- statepop.2019 %>% select(fips = GEOID, pop2019 = estimate)
+statepop.2019$fips <- as.integer(statepop.2019$fips)
+
+# Merge datasets by fips, calculate population change
+statepop.diff <- merge(statepop.2010, statepop.2019, by = 'fips')
+statepop.diff$popChange <- statepop.diff$pop2019 - statepop.diff$pop2010
+statepop.diff <- statepop.diff %>% select(NAME, popChange)
+names(statepop.diff) <- c('state', 'popChange')
+
+# Merge map and population data
+popChange.map <- map_data('state') %>%
+  mutate(region = str_to_title(region)) %>%
+  left_join(statepop.diff, by = c('region' = 'state'))
+
+# plot map of states with covid data
+p_map <- ggplot(data = popChange.map,
+                        mapping = aes(x = long, y = lat, 
+                                      group = group, # groups points of state borders together
+                                      fill = popChange, # adds fill color by pop change
+                                      text = paste("2010 to 2019 Population Change:\n", popChange))) + 
+  geom_polygon(color = 'white') +
+  ggdendro::theme_dendro() +
+  scale_fill_viridis_c(option = 'magma', direction = -1) +
+  guides(fill = guide_legend(title = 'State Population change between 2010 and 2019')) +
+  coord_map("conic", lat0 = 30)
+
+
+```
+
+## Interactive State Map
+```{r, echo=FALSE}
+
+# Change to interactive ploty figure
+ggplotly(p_map, tooltip = 'text')
+```
