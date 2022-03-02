@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## STAA 566 Will Paces Homework 3
 
-I wanted to visualize the change in state populations between 2010 and 2019, and provide plots comparing average income and cost-of-living over this time period in an attempt to provide an economic explanation for the migration of people. This data was downloaded from the US census bureau from both the Decennial and American Community Survey data repositiories.
+I wanted to visualize the change in state populations between 2010 and 2019, and provide plots detailing the change in median income over this time period in an attempt to provide an economic explanation for the migration of people. This data was downloaded from the US census bureau from both the Decennial and American Community Survey data repositiories.
 
 ```{r, warning=FALSE,message=FALSE}
 # Load libraries
@@ -34,6 +34,7 @@ library(plotly)
 library(leaflet)
 library(leafpop)
 library(rlang)
+library(purrr)
 ```
 
 ```{r}
@@ -66,10 +67,9 @@ p_map <- ggplot(data = popChange.map,
                                       text = paste("2010 to 2019 Population Change:\n", popChange))) + 
   geom_polygon(color = 'white') +
   ggdendro::theme_dendro() +
-  scale_fill_viridis_c(option = 'magma', direction = -1) +
+  scale_fill_viridis_c(option = 'magma') +
   guides(fill = guide_legend(title = 'State Population change between 2010 and 2019')) +
   coord_map("conic", lat0 = 30)
-
 
 ```
 
@@ -78,4 +78,54 @@ p_map <- ggplot(data = popChange.map,
 
 # Change to interactive ploty figure
 ggplotly(p_map, tooltip = 'text')
+```
+
+## Interactive state map with Annual Median income plots
+```{r}
+# geographic state center data obtained from:
+# https://developers.google.com/public-data/docs/canonical/states_csv
+
+# Get state centroid longitude and latitude for leaflet plots
+state.midpoint <- read.csv('C:\\Users\\Will\\Desktop\\STAA 566\\AssignmentGitRepos\\HW3_Paces_Will\\StateCentroids.csv')
+names(state.midpoint) <- c('name', 'latitude', 'longitude')
+
+# Download median income data per state between 2010 and 2019
+years <- c(2010:2019)
+state.income <- map_dfr(years, 
+                        ~get_acs(geography = 'state', variables = 'B19013_001', 
+                                 year = .x, geometry = F),
+                        .id = 'year.id') %>%
+  select(year.id, NAME, median.income = estimate) %>% # remove unnecessary variables
+  mutate(year = as.integer(year.id) + 2009) %>%
+  select(-year.id)
+
+
+#state.income$NAME <- factor(state.income$NAME, levels = state.midpoint$name)
+state.income <- state.income[order(state.income$NAME), ]
+
+# Function to generate state median income plots
+make.ts.plots <- function(name){
+  ggplot(dplyr::filter(state.income, NAME == name)) + 
+    geom_line(aes(x = year, y = median.income)) +
+    scale_x_discrete(years) +
+    theme_minimal() + 
+    labs(x = 'Year', y = 'State Median Annual Income') + 
+    ggtitle(paste0("Median Annual Income in ", name, "\nBetween 2010 and 2019"))
+}
+
+state.inc.plots <- lapply(unique(state.income$NAME), make.ts.plots)
+
+# Prepare state midpoint data 
+state.avg.inc <- state.income %>%
+  group_by(NAME) %>%
+  summarise(median.income = mean(median.income)) %>%
+  select(name = NAME, median.income)
+
+state.midpoint <- merge(state.midpoint, state.avg.inc, by = 'name')
+
+# Plot state centers with leaflet and add plots with leafpop
+leaflet(state.midpoint) %>% addTiles() %>%
+  addAwesomeMarkers(~longitude, ~latitude,
+                    popup = popupGraph(state.inc.plots))
+
 ```
